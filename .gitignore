@@ -1,0 +1,27 @@
+.env
+
+# 題目文件與內部規劃文件
+docs/*.pdf
+spec-v3.1.md
+roadmap.md
+
+# Claude Code 本機設定
+.claude/
+
+# Maven / Java
+target/
+*.class
+*.jar
+
+# Node / Vite
+node_modules/
+dist/
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
