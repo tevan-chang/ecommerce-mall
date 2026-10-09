@@ -15,15 +15,17 @@ Governing documents, in order of authority for anything not covered below:
 - `roadmap.md` — phase-by-phase task/DoD checklist with checkboxes kept up to date as work completes.
   **Gitignored**, local planning doc only.
 
-Current status: Phase 1~4 complete (DB layer, backend API, integration/concurrency tests, frontend). Phase 5 (Nginx + app containerization, README) not started — `nginx/` does not exist yet.
+Current status: Phase 1~5 complete (DB layer, backend API, integration/concurrency tests, frontend, containerization + README). Clean-clone acceptance (`git clone` → `cp .env.example .env` → `docker compose up -d --build`) has passed — from here on, bug fixes only, no new features (see `roadmap.md` 緩衝 phase).
 
 ## Commands
 Backend commands run from `backend/`; frontend commands run from `frontend/`.
 
 ```bash
-# DB (Nginx/app services don't exist until Phase 5)
-docker compose up -d db          # from repo root
+# Full stack (from repo root)
+docker compose up -d --build     # db + app + web; fresh-volume cold start can take ~2-3min (db DDL+seed) before app/web report healthy — not stuck
 docker compose down -v           # full reset incl. volume; re-runs DB/*.sql seed on next up
+# DB only (for local dev running backend/frontend outside Docker)
+docker compose up -d db          # from repo root
 # Backend tests
 mvn clean package                                                     # all layers
 mvn test -Dtest='com.demo.mall.db.*Test'                              # SP behavior (Testcontainers MySQL)
@@ -36,7 +38,7 @@ npm run build     # vue-tsc -b && vite build
 
 **前端慣例**：API 呼叫一律集中在 `src/api/`；禁用 `v-html`、`innerHTML`、`eval`；金額一律由後端計算，前端不送 `price`/`total` 欄位，畫面金額僅供試算顯示。
 
-**Testcontainers（換機器時的一次性設定）**：DB 層測試立即失敗通常是 Docker Desktop npipe 代理相容性問題，非 daemon 不可達，建 `~/.testcontainers.properties`（`docker.host=npipe:////./pipe/dockerDesktopLinuxEngine`，依 `docker context ls` 調整）；`testcontainers.version` 已固定 `1.21.4`，此問題已解決。
+**Testcontainers（換機器時的一次性設定）**：DB 層測試立即失敗通常是 Docker Desktop npipe 代理相容性問題，非 daemon 不可達，建 `~/.testcontainers.properties`（`docker.host=npipe:////./pipe/dockerDesktopLinuxEngine`，依 `docker context ls` 調整）；`testcontainers.version` 已固定 `1.21.4`，此問題已解決。換新機器第一次執行 `mvn test`/`mvn clean package` 時，Testcontainers 需 pull MySQL image 並冷啟動 InnoDB，實測可能耗時數分鐘（非卡住），之後的執行會快很多。
 
 ## Architecture
 ### Backend package layout (`backend/src/main/java/com/demo/mall/`)
