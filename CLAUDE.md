@@ -3,10 +3,7 @@
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Project overview
-
-An e-commerce mall interview assignment (2-day delivery scope): product creation, in-stock product listing,
-and order creation with stock deduction. Three-tier architecture — Vue 3 + TypeScript frontend, Spring Boot 3
-(Java 17) backend, MySQL 8 — deployed via Docker Compose (Nginx / app / db).
+An e-commerce mall interview assignment (2-day delivery scope): product creation, in-stock product listing, and order creation with stock deduction. Three-tier architecture — Vue 3 + TypeScript frontend, Spring Boot 3 (Java 17) backend, MySQL 8 — deployed via Docker Compose (Nginx / app / db).
 
 Governing documents, in order of authority for anything not covered below:
 
@@ -18,106 +15,62 @@ Governing documents, in order of authority for anything not covered below:
 - `roadmap.md` — phase-by-phase task/DoD checklist with checkboxes kept up to date as work completes.
   **Gitignored**, local planning doc only.
 
-Current status: Phase 1 (DB layer) and Phase 2 (backend API) are done and committed. Phase 3 (integration/
-concurrency tests), Phase 4 (frontend), Phase 5 (containerization + docs) are not yet started — `frontend/`
-and `nginx/` are empty.
+Current status: Phase 1~4 complete (DB layer, backend API, integration/concurrency tests, frontend). Phase 5 (Nginx + app containerization, README) not started — `nginx/` does not exist yet.
 
 ## Commands
-
-All backend commands run from `backend/`.
+Backend commands run from `backend/`; frontend commands run from `frontend/`.
 
 ```bash
-# Start the DB only (Nginx/app services don't exist until Phase 5)
+# DB (Nginx/app services don't exist until Phase 5)
 docker compose up -d db          # from repo root
 docker compose down -v           # full reset incl. volume; re-runs DB/*.sql seed on next up
-
-# Build + run all tests (unit, slice, and Testcontainers DB/integration tests)
-mvn clean package
-
-# Run one test class / one test method
-mvn test -Dtest=OrderServiceTest
-mvn test -Dtest=OrderServiceTest#itemsAreProcessedInProductIdOrder_andTotalIsSumOfItemPrices
-
-# Run only one layer of tests
+# Backend tests
+mvn clean package                                                     # all layers
 mvn test -Dtest='com.demo.mall.db.*Test'                              # SP behavior (Testcontainers MySQL)
 mvn test -Dtest='com.demo.mall.service.*Test,com.demo.mall.controller.*Test'  # Mockito + MockMvc
-
-# Run the app locally against the docker-compose db (mapped to host port 3307)
-DB_HOST=localhost DB_PORT=3307 DB_USER=mall_app DB_PASSWORD=<from .env> \
-  java -jar target/mall-0.0.1-SNAPSHOT.jar
-curl -s http://localhost:8080/actuator/health
+# Frontend
+npm ci
+npm run dev       # Vite dev server on :5173, proxies /api to :8080
+npm run build     # vue-tsc -b && vite build
 ```
 
-**Windows/Docker Desktop Testcontainers gotcha**: if DB/integration tests fail immediately with
-`Could not find a valid Docker environment` / a 400 response with an all-empty `Info` body, it's a
-protocol mismatch between Docker Desktop's npipe proxy and the docker-java version Testcontainers bundles —
-the plain `docker` CLI and `docker compose` are unaffected, so don't be misled into thinking the daemon
-itself is unreachable. Fix (needed once per machine): create `~/.testcontainers.properties` with
-`docker.host=npipe:////./pipe/dockerDesktopLinuxEngine` (match whatever `docker context ls` shows as the
-current context's endpoint) and make sure `backend/pom.xml`'s `testcontainers.version` is current (bumping
-1.19.8 → 1.21.4 fixed it here). Both changes are required together.
+**前端慣例**：API 呼叫一律集中在 `src/api/`；禁用 `v-html`、`innerHTML`、`eval`；金額一律由後端計算，前端不送 `price`/`total` 欄位，畫面金額僅供試算顯示。
+
+**Testcontainers（換機器時的一次性設定）**：DB 層測試立即失敗通常是 Docker Desktop npipe 代理相容性問題，非 daemon 不可達，建 `~/.testcontainers.properties`（`docker.host=npipe:////./pipe/dockerDesktopLinuxEngine`，依 `docker context ls` 調整）；`testcontainers.version` 已固定 `1.21.4`，此問題已解決。
 
 ## Architecture
-
 ### Backend package layout (`backend/src/main/java/com/demo/mall/`)
+Organized **by technical layer**, not by feature — hard requirement, see `GUARDRAILS.md` rule 6:
 
-Packages are organized **by technical layer**, not by feature — this is a hard requirement (see
-`GUARDRAILS.md` rule 6 and the self-check greps below), not a stylistic choice:
-
-- `controller/` — HTTP binding, `@Valid` request validation, status codes. No business logic.
-- `service/` — business rules, transaction boundaries, SQLState→exception translation. `OrderService`
-  and `ProductService`.
-- `repository/` — one method per stored procedure call via `JdbcTemplate`/`CallableStatement`. **Never**
-  build SQL strings here — only `{call sp_xxx(...)}` invocations. `ProductRecord` is an internal
-  repository-to-service row type (not a DTO).
-- `dto/request/`, `dto/response/` — Java records with Bean Validation annotations. Request DTOs never
-  carry money fields (price/total) — the server always computes and owns amounts.
-- `common/` — `ApiResponse<T>` (uniform `{code, message, data}` envelope), `ErrorCode` (maps to HTTP
-  status), `BusinessException`, `GlobalExceptionHandler` (`@RestControllerAdvice`; generic 500 message only,
-  never leaks stack traces or SQL), `SqlStateUtils` (walks the cause chain to pull `SQLState` out of a
-  `DataAccessException`), `TransactionConfig` (exposes a `TransactionTemplate` bean).
+- `controller/` — HTTP binding, `@Valid` validation, status codes. No business logic.
+- `service/` — business rules, transaction boundaries, SQLState→exception translation.
+- `repository/` — one method per SP call via `JdbcTemplate`/`CallableStatement`; never build SQL strings.
+- `dto/request|response/` — Java records with Bean Validation; request DTOs never carry money fields.
+- `common/` — `ApiResponse<T>`, `ErrorCode`, `BusinessException`, `GlobalExceptionHandler` (generic 500, no stack trace/SQL leak), `SqlStateUtils`, `TransactionConfig` (`TransactionTemplate` bean).
 
 ### Database access pattern
+Six fixed stored procedures in `DB/02_stored_procedures.sql` — don't add a 7th (Phase 1 DoD checks `SHOW PROCEDURE STATUS` = 6; `sp_insert_product` now generates `product_id` via `product_seq` instead of taking it as an IN param, ADR-004). Repositories call them via `{call sp_xxx(?,...)}`. **OUT-param gotcha**: `JdbcTemplate.call(CallableStatementCreator, List<SqlParameter>)` needs the full positional parameter list including IN params — extraction indexes by position, so a partial list silently reads the wrong column and only throws on the success path (error paths SIGNAL before extraction runs). See `ProductRepository.insertProduct`/`deductStock` or `OrderRepository.nextOrderId`.
 
-All six stored procedures live in `DB/02_stored_procedures.sql` (fixed set, don't add a 7th — Phase 1's DoD
-checks `SHOW PROCEDURE STATUS` returns exactly 6). Repositories call them via `{call sp_xxx(?,...)}` using
-`JdbcTemplate`. For procedures with `OUT` parameters, `JdbcTemplate.call(CallableStatementCreator, List<SqlParameter>)`
-requires the **full positional parameter list including IN params** (not just the OUT ones) — the extraction
-logic indexes by position in that list, so a partial list silently reads the wrong column and throws
-`Parameter number N is not an OUT parameter` only on the success path (error paths SIGNAL before extraction
-runs, so this bug hides behind passing error-case tests). See `ProductRepository.deductStock` /
-`OrderRepository.nextOrderId` for the correct pattern.
+SQLState → business meaning: `45001` not found, `45002` insufficient stock, `45003` duplicate. Services extract it via `SqlStateUtils.extract` and throw the matching `BusinessException`.
 
-SQLState → business meaning: `45001` product not found, `45002` insufficient stock, `45003` duplicate
-product. Services catch `DataAccessException`, extract the SQLState via `SqlStateUtils.extract`, and throw
-the matching `BusinessException`.
+### Order creation flow (`OrderService.createOrder`) — see ADR-001/002/003 for full rationale
+1. Validate request (dup `productId` → 400) before opening a transaction.
+2. Pre-fetch all products (`ProductRepository.findAllProducts`) once, purely for `productName` lookup.
+3. Sort items by `productId` before touching stock — fixed lock order avoids deadlocks (ADR-002).
+4. Inside one `TransactionTemplate.execute`: deduct stock per item, compute `itemPrice`/`total` in `BigDecimal`, generate order ID last (`sp_next_order_id`, Java `Asia/Taipei` date, ADR-003), insert.
+5. Transactions only via Spring's `TransactionTemplate`, never inside a SP (ADR-001) — `@Transactional` deliberately avoided due to self-invocation pitfalls in this call shape.
 
-### Order creation flow (`OrderService.createOrder`)
+## 工作流程
+Phase 5 只做容器化、README 與交付驗證，不再新增功能；題目規格未要求的功能一律不做。交付前以乾淨 `git clone` 跑一次 `docker compose up -d --build` 驗收整站可一鍵啟動。
 
-1. Validate request (dup `productId` in one order → 400) **before** opening a transaction.
-2. Pre-fetch all products (`ProductRepository.findAllProducts`, backed by `sp_get_available_products` — the
-   SP itself now returns every product regardless of stock) once, outside the transaction, purely to get
-   `productName` for the response — product names aren't returned by `sp_deduct_stock`, and since the lookup
-   no longer filters by stock there's no staleness concern between fetch time and deduction.
-3. Sort items by `productId` before touching stock — fixed lock order prevents deadlocks across concurrent
-   multi-item orders (ADR-002).
-4. Inside one `TransactionTemplate.execute` block: deduct stock per item (throws on insufficient/not-found,
-   rolling back everything including earlier successful deductions in the same order), compute `itemPrice`/
-   `total` in `BigDecimal`, generate the order ID as the **last** step (`sp_next_order_id`, called with a
-   `yyyyMMdd` date computed in Java using `Asia/Taipei` — not DB time, see ADR-003), then insert order +
-   order details.
-5. Transactions are controlled only by Spring's `TransactionTemplate`, never inside a stored procedure
-   (ADR-001) — `@Transactional` is deliberately avoided due to self-invocation pitfalls in this call shape.
+## Guardrail 自檢
+完整 9 條規則見 `GUARDRAILS.md`，違反任一條即不可交付。底部附的自動檢查：
 
-### Hard constraints (full list in `GUARDRAILS.md`)
+```bash
+grep -rniE "start transaction|commit|rollback|prepare |execute " DB/02_stored_procedures.sql && echo "FAIL: 規則 2/4"
+grep -rniE "select |insert into|update .* set|delete from" backend/src/main/java/com/demo/mall/repository && echo "FAIL: 規則 2/6"
+grep -rnE "\b(double|float)\b" backend/src/main && echo "FAIL: 規則 5"
+grep -rniE "v-html|innerHTML|eval\(" frontend/src && echo "FAIL: 規則 7"
+```
 
-These are correctness/security invariants, not style preferences — violating any one is a delivery blocker:
-
-- Money fields are always `BigDecimal`/`DECIMAL`, never `double`/`float`.
-- Stock deduction is a single conditional `UPDATE ... WHERE quantity >= ?`; never `SELECT` then `UPDATE`.
-- Request DTOs never contain price/total fields — server always computes amounts.
-- Repositories contain no SQL string literals (`SELECT`/`INSERT INTO`/`UPDATE ... SET`/`DELETE FROM`) and
-  stored procedures contain no `START TRANSACTION`/`COMMIT`/`ROLLBACK`/dynamic SQL — enforced by the grep
-  self-checks in `GUARDRAILS.md`.
-- 500 responses never include stack traces or SQL text (see `GlobalExceptionHandler`).
-- `.env` never gets committed; only `.env.example` ships.
+規則 1、3 由測試案例覆蓋；規則 8 由 `git ls-files | grep -E "(^|/)\.env$"` 無輸出確認；規則 9 由測試案例覆蓋。
