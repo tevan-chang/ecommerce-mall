@@ -39,6 +39,8 @@ cp .env.example .env   # 依需要調整 DB_ROOT_PASSWORD / DB_USER / DB_PASSWOR
 docker compose up -d --build
 ```
 
+> 首次啟動（全新 volume）db 需跑完 DDL + Seed 才會轉為 healthy，實測最長約 2~3 分鐘，期間 `app`/`web` 會等待 db healthcheck 通過才啟動，非卡住。可用 `docker compose ps` 確認目前狀態，或 `docker compose logs -f db` 看初始化進度。
+
 啟動後：
 
 - 前端：http://localhost
