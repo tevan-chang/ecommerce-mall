@@ -13,7 +13,7 @@ services:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${DB_ROOT_PASSWORD}"]
       interval: 5s
       timeout: 5s
-      retries: 20
+      retries: 60
     ports:
       - "3307:3306"
 
