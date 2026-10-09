@@ -8,6 +8,7 @@
 | 001 | Transaction 只由 Spring 控制，SP 只做單一操作 | Accepted |
 | 002 | 以條件式 UPDATE 防止超賣 | Accepted |
 | 003 | 以 `order_seq` 表產生 OrderID，日期由應用層傳入 | Accepted |
+| 004 | 以 `product_seq` 表產生 ProductID，伺服器端自動配號 | Accepted |
 
 ---
 
@@ -36,3 +37,12 @@
 - **決策**：`order_seq(seq_date, last_seq)` 搭配 `INSERT ... ON DUPLICATE KEY UPDATE` 遞增，於 Transaction 最後一步呼叫以縮短列鎖時間。日期由 Java 以固定的 `Asia/Taipei` 計算後，作為參數傳入 `sp_next_order_id`。
 - **替代方案**：`MAX(order_id)+1`（race condition）；隨機 6 碼（有碰撞機率需重試）；UUID（不符題目格式）；全環境設為 `Asia/Taipei` 或 SP 內 `CONVERT_TZ`（依賴部署環境設定）。
 - **後果**：+ 無重複、每日自動歸零、不依賴 DB 時區設定。− 同日訂單在 `order_seq` 該列序列化，高 TPS 需改用分段或外部序號服務；時區固定為 `Asia/Taipei`，多時區需另行設計。
+
+## ADR-004：以 `product_seq` 表產生 ProductID，伺服器端自動配號
+
+- **狀態**：Accepted（2026-10-09）
+- **背景**：原本新增商品由管理者自行輸入 `product_id`，改為自動產生後，多個管理者同時新增商品時不得配出重複編號；格式延續既有 `Pxxx`（`P001`~`P003`）慣例。
+- **決策**：仿照 ADR-003 的做法，新增 `product_seq(seq_key, last_seq)` 單列計數表，`sp_insert_product` 內以 `INSERT ... ON DUPLICATE KEY UPDATE last_seq = last_seq + 1` 原子遞增、取號、`LPAD` 組字串後寫入 `product`，三個步驟都在同一支 SP、同一次呼叫內完成，不需 Spring 層級的 Transaction 包裝。`product_id` 從請求 DTO 移除，改由 SP 以 OUT 參數回傳。
+- **替代方案**：`MAX(product_id)+1`（並發下的 race condition，與 ADR-003 否決 `MAX(order_id)+1` 同理）；前端依目前清單算出下一號（無法保證跟後端同步，仍可能撞號）；UUID 或亂碼（不符現有 `Pxxx` 格式慣例）。
+- **後果**：+ 保證唯一、格式與既有商品一致；+ 與 ADR-003 同一套手法，維護者容易類比理解。− 新增商品的寫入在 `product_seq` 該列序列化，MVP 規模下可接受，高 TPS 需改用分段計數器。
+- **相關規則**：GUARDRAILS 2、4、6。

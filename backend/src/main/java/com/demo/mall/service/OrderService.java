@@ -45,8 +45,9 @@ public class OrderService {
     public OrderResponse createOrder(OrderCreateRequest request) {
         validateNoDuplicateProductIds(request.items());
 
+        // 取全部商品只為了查名稱（sp_deduct_stock 才是真正的庫存檢查），與商品當下是否有庫存無關
         Map<String, String> productNameById = new HashMap<>();
-        productRepository.findAvailableProducts()
+        productRepository.findAllProducts()
                 .forEach(p -> productNameById.put(p.productId(), p.productName()));
 
         List<OrderItemRequest> sortedItems = request.items().stream()

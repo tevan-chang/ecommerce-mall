@@ -48,12 +48,14 @@ abstract class AbstractDbTest {
             st.execute("DELETE FROM order_detail");
             st.execute("DELETE FROM orders");
             st.execute("DELETE FROM order_seq");
+            st.execute("DELETE FROM product_seq");
             st.execute("DELETE FROM product");
             st.execute("SET FOREIGN_KEY_CHECKS=1");
             st.execute("INSERT INTO product (product_id, product_name, price, quantity) VALUES "
                     + "('P001','osii 舒壓按摩椅',98000,5),"
                     + "('P002','網友最愛起司蛋糕',1200,50),"
                     + "('P003','真愛密碼項鍊',8500,20)");
+            st.execute("INSERT INTO product_seq (seq_key, last_seq) VALUES ('P', 3)");
         }
     }
 }

@@ -95,9 +95,10 @@ the matching `BusinessException`.
 ### Order creation flow (`OrderService.createOrder`)
 
 1. Validate request (dup `productId` in one order → 400) **before** opening a transaction.
-2. Pre-fetch available products (`sp_get_available_products`) once, outside the transaction, purely to get
-   `productName` for the response — product names aren't returned by `sp_deduct_stock`, and this lookup is
-   safe because any item that successfully deducts must have had stock > 0 when fetched.
+2. Pre-fetch all products (`ProductRepository.findAllProducts`, backed by `sp_get_available_products` — the
+   SP itself now returns every product regardless of stock) once, outside the transaction, purely to get
+   `productName` for the response — product names aren't returned by `sp_deduct_stock`, and since the lookup
+   no longer filters by stock there's no staleness concern between fetch time and deduction.
 3. Sort items by `productId` before touching stock — fixed lock order prevents deadlocks across concurrent
    multi-item orders (ADR-002).
 4. Inside one `TransactionTemplate.execute` block: deduct stock per item (throws on insufficient/not-found,

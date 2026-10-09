@@ -27,14 +27,17 @@ public class ProductController {
     }
 
     @PostMapping
-    public ResponseEntity<ApiResponse<Void>> createProduct(@Valid @RequestBody ProductCreateRequest request) {
-        productService.createProduct(request);
-        return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success());
+    public ResponseEntity<ApiResponse<ProductResponse>> createProduct(@Valid @RequestBody ProductCreateRequest request) {
+        ProductResponse response = productService.createProduct(request);
+        return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(response));
     }
 
     @GetMapping
     public ApiResponse<List<ProductResponse>> listProducts(
             @RequestParam(value = "inStock", required = false) Boolean inStock) {
-        return ApiResponse.success(productService.getAvailableProducts());
+        List<ProductResponse> products = Boolean.TRUE.equals(inStock)
+                ? productService.getAvailableProducts()
+                : productService.getAllProducts();
+        return ApiResponse.success(products);
     }
 }

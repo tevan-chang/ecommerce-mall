@@ -5,6 +5,8 @@ INSERT INTO product (product_id, product_name, price, quantity) VALUES
   ('P002', '網友最愛起司蛋糕', 1200, 50),
   ('P003', '真愛密碼項鍊', 8500, 20);
 
+INSERT INTO product_seq (seq_key, last_seq) VALUES ('P', 3);
+
 INSERT INTO orders (order_id, member_id, price, pay_status) VALUES
   ('Ms20250801186230', '458', 98000, 1),
   ('Ms20250805157824', '55688', 9700, 0),

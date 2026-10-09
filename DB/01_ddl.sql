@@ -33,3 +33,8 @@ CREATE TABLE order_seq (
   seq_date CHAR(8) NOT NULL PRIMARY KEY,
   last_seq INT     NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE product_seq (
+  seq_key  VARCHAR(10) NOT NULL PRIMARY KEY,
+  last_seq INT         NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

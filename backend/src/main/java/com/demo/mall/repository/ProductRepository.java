@@ -20,11 +20,23 @@ public class ProductRepository {
         this.jdbcTemplate = jdbcTemplate;
     }
 
-    public void insertProduct(String productId, String productName, BigDecimal price, int quantity) {
-        jdbcTemplate.update("{call sp_insert_product(?, ?, ?, ?)}", productId, productName, price, quantity);
+    public String insertProduct(String productName, BigDecimal price, int quantity) {
+        Map<String, Object> out = jdbcTemplate.call(con -> {
+            CallableStatement cs = con.prepareCall("{call sp_insert_product(?, ?, ?, ?)}");
+            cs.setString(1, productName);
+            cs.setBigDecimal(2, price);
+            cs.setInt(3, quantity);
+            cs.registerOutParameter(4, Types.VARCHAR);
+            return cs;
+        }, List.of(
+                new SqlParameter("p_name", Types.VARCHAR),
+                new SqlParameter("p_price", Types.DECIMAL),
+                new SqlParameter("p_qty", Types.INTEGER),
+                new SqlOutParameter("p_id", Types.VARCHAR)));
+        return (String) out.get("p_id");
     }
 
-    public List<ProductRecord> findAvailableProducts() {
+    public List<ProductRecord> findAllProducts() {
         return jdbcTemplate.query("{call sp_get_available_products()}", (rs, rowNum) -> new ProductRecord(
                 rs.getString("product_id"),
                 rs.getString("product_name"),

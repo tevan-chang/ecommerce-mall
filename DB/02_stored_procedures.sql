@@ -3,19 +3,26 @@ SET NAMES utf8mb4;
 DELIMITER $$
 
 CREATE PROCEDURE sp_insert_product(
-  IN p_id VARCHAR(20), IN p_name VARCHAR(100), IN p_price DECIMAL(12,0), IN p_qty INT)
+  IN p_name VARCHAR(100), IN p_price DECIMAL(12,0), IN p_qty INT, OUT p_id VARCHAR(20))
 BEGIN
+  DECLARE v_seq INT;
   DECLARE EXIT HANDLER FOR 1062
     SIGNAL SQLSTATE '45003' SET MESSAGE_TEXT = 'DUPLICATE_PRODUCT';
+
+  INSERT INTO product_seq (seq_key, last_seq) VALUES ('P', 1)
+    ON DUPLICATE KEY UPDATE last_seq = last_seq + 1;   -- 持有 row lock 至本次 CALL 結束，確保併發新增不撞號
+  SELECT last_seq INTO v_seq FROM product_seq WHERE seq_key = 'P';
+  SET p_id = CONCAT('P', LPAD(v_seq, GREATEST(3, CHAR_LENGTH(CAST(v_seq AS CHAR))), '0'));
+
   INSERT INTO product (product_id, product_name, price, quantity)
   VALUES (p_id, p_name, p_price, p_qty);
 END$$
 
+-- 回傳全部商品（含庫存 0）；是否僅顯示庫存 > 0 由呼叫端（Service 層）決定
 CREATE PROCEDURE sp_get_available_products()
 BEGIN
   SELECT product_id, product_name, price, quantity, created_at
   FROM product
-  WHERE quantity > 0
   ORDER BY product_id;
 END$$
 

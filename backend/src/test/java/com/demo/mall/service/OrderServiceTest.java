@@ -75,7 +75,7 @@ class OrderServiceTest {
         setUp();
         stubTransactionTemplateToRunCallback();
 
-        when(productRepository.findAvailableProducts()).thenReturn(List.of(
+        when(productRepository.findAllProducts()).thenReturn(List.of(
                 new ProductRecord("P001", "商品一", new BigDecimal("1000"), 10),
                 new ProductRecord("P002", "商品二", new BigDecimal("1200"), 10)
         ));

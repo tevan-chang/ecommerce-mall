@@ -20,10 +20,11 @@ public class ProductService {
         this.productRepository = productRepository;
     }
 
-    public void createProduct(ProductCreateRequest request) {
+    public ProductResponse createProduct(ProductCreateRequest request) {
         try {
-            productRepository.insertProduct(request.productId(), request.productName(),
-                    request.price(), request.quantity());
+            String productId = productRepository.insertProduct(
+                    request.productName(), request.price(), request.quantity());
+            return new ProductResponse(productId, request.productName(), request.price(), request.quantity());
         } catch (DataAccessException ex) {
             if ("45003".equals(SqlStateUtils.extract(ex))) {
                 throw new BusinessException(ErrorCode.DUPLICATE_PRODUCT, "商品編號已存在");
@@ -32,8 +33,15 @@ public class ProductService {
         }
     }
 
+    public List<ProductResponse> getAllProducts() {
+        return productRepository.findAllProducts().stream()
+                .map(p -> new ProductResponse(p.productId(), p.productName(), p.price(), p.quantity()))
+                .toList();
+    }
+
     public List<ProductResponse> getAvailableProducts() {
-        return productRepository.findAvailableProducts().stream()
+        return productRepository.findAllProducts().stream()
+                .filter(p -> p.quantity() > 0)
                 .map(p -> new ProductResponse(p.productId(), p.productName(), p.price(), p.quantity()))
                 .toList();
     }

@@ -14,10 +14,6 @@ import java.math.BigDecimal;
 public record ProductCreateRequest(
 
         @NotBlank
-        @Pattern(regexp = "^[A-Za-z0-9_-]{1,20}$", message = "格式不符")
-        String productId,
-
-        @NotBlank
         @Pattern(regexp = "^[^<>]{1,100}$", message = "格式不符或包含不允許字元")
         String productName,
 
