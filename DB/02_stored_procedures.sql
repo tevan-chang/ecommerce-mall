@@ -9,9 +9,13 @@ BEGIN
   DECLARE EXIT HANDLER FOR 1062
     SIGNAL SQLSTATE '45003' SET MESSAGE_TEXT = 'DUPLICATE_PRODUCT';
 
-  INSERT INTO product_seq (seq_key, last_seq) VALUES ('P', 1)
-    ON DUPLICATE KEY UPDATE last_seq = last_seq + 1;   -- 持有 row lock 至本次 CALL 結束，確保併發新增不撞號
-  SELECT last_seq INTO v_seq FROM product_seq WHERE seq_key = 'P';
+  -- 連線為自動提交模式時，每條語句各自隱含交易，row lock 在本語句結束即釋放（並非到 CALL 結束），
+  -- 故不能用「UPDATE 再 SELECT 讀回」，否則兩個併發連線可能讀到同一個 last_seq。
+  -- 改用 LAST_INSERT_ID(expr) 的連線層級（session-local）取值：遞增與取號在同一條語句內完成，
+  -- 之後的 SELECT LAST_INSERT_ID() 讀的是本連線剛剛寫入的值，與其他連線互不干擾，天生無競態。
+  INSERT INTO product_seq (seq_key, last_seq) VALUES ('P', LAST_INSERT_ID(1))
+    ON DUPLICATE KEY UPDATE last_seq = LAST_INSERT_ID(last_seq + 1);
+  SET v_seq = LAST_INSERT_ID();
   SET p_id = CONCAT('P', LPAD(v_seq, GREATEST(3, CHAR_LENGTH(CAST(v_seq AS CHAR))), '0'));
 
   INSERT INTO product (product_id, product_name, price, quantity)

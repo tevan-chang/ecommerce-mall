@@ -42,7 +42,7 @@
 
 - **狀態**：Accepted（2026-10-09）
 - **背景**：原本新增商品由管理者自行輸入 `product_id`，改為自動產生後，多個管理者同時新增商品時不得配出重複編號；格式延續既有 `Pxxx`（`P001`~`P003`）慣例。
-- **決策**：仿照 ADR-003 的做法，新增 `product_seq(seq_key, last_seq)` 單列計數表，`sp_insert_product` 內以 `INSERT ... ON DUPLICATE KEY UPDATE last_seq = last_seq + 1` 原子遞增、取號、`LPAD` 組字串後寫入 `product`，三個步驟都在同一支 SP、同一次呼叫內完成，不需 Spring 層級的 Transaction 包裝。`product_id` 從請求 DTO 移除，改由 SP 以 OUT 參數回傳。
-- **替代方案**：`MAX(product_id)+1`（並發下的 race condition，與 ADR-003 否決 `MAX(order_id)+1` 同理）；前端依目前清單算出下一號（無法保證跟後端同步，仍可能撞號）；UUID 或亂碼（不符現有 `Pxxx` 格式慣例）。
-- **後果**：+ 保證唯一、格式與既有商品一致；+ 與 ADR-003 同一套手法，維護者容易類比理解。− 新增商品的寫入在 `product_seq` 該列序列化，MVP 規模下可接受，高 TPS 需改用分段計數器。
+- **決策**：仿照 ADR-003 的做法，新增 `product_seq(seq_key, last_seq)` 單列計數表。`sp_insert_product` 內原先以 `INSERT ... ON DUPLICATE KEY UPDATE last_seq = last_seq + 1` 遞增後，再用獨立 `SELECT ... INTO` 讀回——但 autocommit=1 下每條語句各自隱含交易，row lock 在該語句結束即釋放，兩個併發連線可能讀到同一個 `last_seq` 而配出重複 `product_id`（已用真實 MySQL 併發測試證實，並非理論風險）。修正後改用 MySQL 官方文件記載的 `LAST_INSERT_ID(expr)` 慣用法：`INSERT ... ON DUPLICATE KEY UPDATE last_seq = LAST_INSERT_ID(last_seq + 1)`，遞增與取號在同一條語句內完成並寫入連線層級（session-local）的 `LAST_INSERT_ID()` 值，後續 `SELECT LAST_INSERT_ID()` 只讀自己連線剛寫入的值，天生不受其他連線影響，不需 Spring 層級的 Transaction 包裝即可保證唯一。`LPAD` 組字串後寫入 `product`。`product_id` 從請求 DTO 移除，改由 SP 以 OUT 參數回傳。
+- **替代方案**：`MAX(product_id)+1`（並發下的 race condition，與 ADR-003 否決 `MAX(order_id)+1` 同理）；前端依目前清單算出下一號（無法保證跟後端同步，仍可能撞號）；UUID 或亂碼（不符現有 `Pxxx` 格式慣例）；在 Service 層用 `TransactionTemplate` 包住整個 SP 呼叫（可行，但多一層依賴呼叫端正確加鎖，不如把原子性收斂在 SP 內部可靠）。
+- **後果**：+ 保證唯一、格式與既有商品一致；+ 與 ADR-003 同一套手法，維護者容易類比理解；+ 原子性完全封裝在 SP 內，不依賴呼叫端是否包交易。− 新增商品的寫入在 `product_seq` 該列序列化，MVP 規模下可接受，高 TPS 需改用分段計數器。
 - **相關規則**：GUARDRAILS 2、4、6。
